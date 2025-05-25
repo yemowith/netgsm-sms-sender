@@ -1,0 +1,35 @@
+{
+  "name": "main-service",
+  "version": "1.0.0",
+  "description": "Simple blockchain indexer service",
+  "main": "dist/index.js",
+  "author": "",
+  "scripts": {
+    "start": "node dist/sender.js",
+    "start:dev": "npm run nm src/sender.ts",
+    "build": "tsc && tsc-alias",
+    "nm": "nodemon -e ts,js --exec ts-node -r tsconfig-paths/register "
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "express": "^5.1.0",
+    "node-fetch": "^3.3.2",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@types/dotenv": "^8.2.0",
+    "@types/express": "^5.0.0",
+    "@types/mime-types": "^2.1.4",
+    "@types/node": "^20.4.2",
+    "dotenv": "^16.4.7",
+    "eslint": "^9.26.0",
+    "nodemon": "^3.1.9",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "tsc-alias": "^1.8.10",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.2.0"
+  },
+  "keywords": [],
+  "license": "ISC"
+}
