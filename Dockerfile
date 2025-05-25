@@ -6,7 +6,7 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
+# Install ALL dependencies (including devDependencies)
 RUN npm ci
 
 # Copy source code
@@ -23,17 +23,22 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
-RUN npm ci --only=production
+# Install ONLY production dependencies
+RUN npm ci --omit=dev
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy environment file if it exists (you should use docker-compose or k8s secrets in production)
+# Copy .env file if it exists (you should use docker-compose or k8s secrets in production)
 COPY .env* ./
+
+# Create a non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN chown -R appuser:appgroup /app
+USER appuser
 
 # Expose the port your app runs on
 EXPOSE 4400
 
 # Start the service
-CMD ["npm", "start"] 
+CMD ["node", "dist/sender.js"] 
