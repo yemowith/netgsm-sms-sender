@@ -1,25 +1,40 @@
-# NetGSM SMS Gateway Service
+# NetGSM SMS Gateway with Supabase Integration
 
-A TypeScript-based SMS gateway service that provides REST API endpoints for sending both regular SMS and OTP messages using NetGSM's API services.
+A robust TypeScript-based SMS gateway service that integrates NetGSM's SMS services with Supabase for message tracking and management. This service provides REST API endpoints for sending both regular SMS and OTP messages, with built-in message logging and tracking capabilities.
 
 ## Features
 
-- Send regular SMS messages via NetGSM REST API
-- Send OTP messages via NetGSM XML API
-- Secure API endpoints with Bearer token authentication
-- Docker support for easy deployment
-- Health check endpoint for monitoring
-- TypeScript implementation with proper error handling
+- **SMS Services**
+
+  - Send regular SMS messages via NetGSM REST API
+  - Send OTP messages via NetGSM XML API
+  - Support for bulk SMS sending
+  - Message delivery status tracking
+
+- **Supabase Integration**
+
+  - Message history logging
+  - Delivery status tracking
+  - User management and authentication
+  - Rate limiting and quota management
+
+- **Security & Reliability**
+  - Secure API endpoints with Bearer token authentication
+  - Supabase JWT authentication support
+  - Rate limiting and request validation
+  - Health check endpoint for monitoring
+  - Docker support for easy deployment
 
 ## Prerequisites
 
-- Node.js (v20 or higher recommended)
+- Node.js (v20 or higher)
 - Docker (optional, for containerized deployment)
 - NetGSM account credentials
+- Supabase project and credentials
 
 ## Environment Variables
 
-Create a `.env` file in the root directory with the following variables:
+Create a `.env` file in the root directory:
 
 ```env
 # NetGSM Credentials
@@ -28,54 +43,86 @@ NETGSM_PASSWORD=your_password
 NETGSM_SMSHEADER=your_header
 NETGSM_APPKEY=your_appkey  # Required for OTP messages
 
+# Supabase Configuration
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+
 # API Security
 SECRET_TOKEN=your_secret_token
+JWT_SECRET=your_jwt_secret
 
 # Server Configuration
 PORT=4400  # Optional, defaults to 4400
+```
+
+## Database Schema (Supabase)
+
+### Messages Table
+
+```sql
+create table messages (
+  id uuid default uuid_generate_v4() primary key,
+  phone text not null,
+  message text not null,
+  type text not null check (type in ('sms', 'otp')),
+  status text not null,
+  job_id text,
+  error text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- Enable RLS
+alter table messages enable row level security;
+
+-- Create policies
+create policy "Users can view their own messages"
+  on messages for select
+  using (auth.uid() = user_id);
+
+create policy "Service role can insert messages"
+  on messages for insert
+  with check (auth.role() = 'service_role');
 ```
 
 ## Installation
 
 ### Local Development
 
-1. Clone the repository:
+1. Clone and setup:
 
 ```bash
 git clone <repository-url>
 cd sms-netgsm-sender
-```
-
-2. Install dependencies:
-
-```bash
 npm install
 ```
 
-3. Build the project:
+2. Set up Supabase:
+
+   - Create a new project in Supabase
+   - Run the database migrations
+   - Configure authentication if needed
+
+3. Start the service:
 
 ```bash
+# Development mode
+npm run start:dev
+
+# Production mode
 npm run build
-```
-
-4. Start the service:
-
-```bash
 npm start
 ```
 
 ### Docker Deployment
 
-1. Build the Docker image:
-
 ```bash
-docker-compose build
-```
+# Build and start
+docker-compose up --build -d
 
-2. Start the service:
-
-```bash
-docker-compose up -d
+# View logs
+docker-compose logs -f
 ```
 
 ## API Endpoints
@@ -89,17 +136,11 @@ Content-Type: application/json
 
 {
     "phone": "905xxxxxxxxx",
-    "message": "Your message here"
-}
-```
-
-Response:
-
-```json
-{
-  "success": true,
-  "jobID": "17377215342605050417149344",
-  "description": "queued"
+    "message": "Your message here",
+    "metadata": {
+        "user_id": "optional-user-id",
+        "campaign_id": "optional-campaign-id"
+    }
 }
 ```
 
@@ -112,69 +153,54 @@ Content-Type: application/json
 
 {
     "phone": "905xxxxxxxxx",
-    "message": "Your OTP code is: 123456"
+    "message": "Your OTP code is: 123456",
+    "metadata": {
+        "user_id": "optional-user-id",
+        "purpose": "verification"
+    }
 }
 ```
 
-Response:
-
-```json
-{
-  "success": true,
-  "jobID": "jobid123",
-  "type": "otp"
-}
-```
-
-### 3. Health Check
+### 3. Check Message Status
 
 ```http
-GET /health
+GET /sms/status/:jobId
+Authorization: Bearer your_secret_token
 ```
 
-Response:
+### 4. Get Message History
 
-```json
-{
-  "status": "ok"
-}
+```http
+GET /sms/history
+Authorization: Bearer your_secret_token
+Query Parameters:
+  - page (default: 1)
+  - limit (default: 20)
+  - type (optional: 'sms' or 'otp')
+  - status (optional: 'queued', 'sent', 'delivered', 'failed')
 ```
 
-## Error Responses
+## Supabase Integration
 
-### Authentication Error
+### Message Tracking
 
-```json
-{
-  "error": "Unauthorized"
-}
-```
+- All sent messages are automatically logged in Supabase
+- Delivery status updates are tracked
+- Support for message metadata and user association
 
-### Validation Error
+### Authentication
 
-```json
-{
-  "error": "Missing phone or message"
-}
-```
+- JWT-based authentication with Supabase
+- Role-based access control
+- Service role for internal operations
 
-### SMS Sending Error
+### Rate Limiting
 
-```json
-{
-  "error": "SMS failed",
-  "code": "error_code"
-}
-```
+- Per-user rate limiting
+- Daily/monthly quota management
+- Configurable limits per message type
 
 ## Development
-
-### Available Scripts
-
-- `npm run build` - Build the TypeScript project
-- `npm start` - Start the production server
-- `npm run start:dev` - Start the development server with hot reload
-- `npm run nm src/sender.ts` - Run with nodemon for development
 
 ### Project Structure
 
@@ -183,47 +209,59 @@ Response:
 ├── src/
 │   ├── sender.ts          # Main application and API endpoints
 │   ├── netgsmSms.ts       # Regular SMS implementation
-│   └── netgsmOtp.ts       # OTP SMS implementation
-├── dist/                  # Compiled JavaScript files
-├── Dockerfile            # Docker configuration
-├── docker-compose.yml    # Docker Compose configuration
-├── package.json          # Project dependencies and scripts
-├── tsconfig.json         # TypeScript configuration
-└── .env                  # Environment variables (not in git)
+│   ├── netgsmOtp.ts       # OTP SMS implementation
+│   ├── supabase/          # Supabase integration
+│   │   ├── client.ts      # Supabase client setup
+│   │   ├── messages.ts    # Message operations
+│   │   └── auth.ts        # Authentication utilities
+│   └── types/             # TypeScript type definitions
+├── migrations/            # Database migrations
+├── docker/               # Docker configuration
+└── tests/               # Test files
 ```
 
-## Docker Configuration
-
-The service is configured to run in Docker with the following features:
-
-- Multi-stage build for smaller image size
-- Health check endpoint for container orchestration
-- Environment variable support
-- Port 4400 exposed by default
-
-### Docker Commands
+### Available Scripts
 
 ```bash
-# Build and start
-docker-compose up --build
+# Development
+npm run start:dev     # Start development server
+npm run test         # Run tests
+npm run lint         # Run linter
 
-# Start in detached mode
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop the service
-docker-compose down
+# Production
+npm run build        # Build the project
+npm start           # Start production server
 ```
 
-## Security Considerations
+## Security Best Practices
 
-1. Always use HTTPS in production
-2. Keep your `SECRET_TOKEN` secure and rotate it periodically
-3. Store NetGSM credentials securely
-4. Use environment variables for sensitive data
-5. Implement rate limiting in production
+1. **API Security**
+
+   - Always use HTTPS in production
+   - Implement rate limiting
+   - Use secure token management
+   - Validate all input data
+
+2. **Supabase Security**
+
+   - Enable Row Level Security (RLS)
+   - Use appropriate policies
+   - Secure service role key
+   - Regular security audits
+
+3. **NetGSM Security**
+   - Secure credential storage
+   - Regular password rotation
+   - Monitor API usage
+   - Implement error handling
+
+## Monitoring and Logging
+
+- Health check endpoint (`/health`)
+- Supabase logging integration
+- Error tracking and reporting
+- Performance monitoring
+- Message delivery status tracking
 
 ## Contributing
 
