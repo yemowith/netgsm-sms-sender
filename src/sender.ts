@@ -1,66 +1,49 @@
 import 'dotenv/config'
-
-import express, { RequestHandler, Router } from 'express'
+import express, { Request, Response, Router } from 'express'
 import bodyParser from 'body-parser'
-import { NetGSMSender } from './netgsmSms'
-import { NetGSMXMLClient } from './netgsmOtp'
+import { NetGSMSender } from './netgsmSms' // kendi NetGSM sınıfın
 
 const app = express()
 app.use(bodyParser.json())
 
 const router = Router()
 
-// Initialize both SMS senders
+// SMS Gönderici sınıfını başlat
 const smsSender = new NetGSMSender({
   username: process.env.NETGSM_USERNAME || '',
   password: process.env.NETGSM_PASSWORD || '',
 })
 
-const otpClient = new NetGSMXMLClient({
-  username: process.env.NETGSM_USERNAME || '',
-  password: process.env.NETGSM_PASSWORD || '',
-  msgheader: process.env.NETGSM_SMSHEADER || 'Baslik',
-  appkey: process.env.NETGSM_APPKEY || 'xxx',
-})
-
-const SECRET_TOKEN = process.env.SECRET_TOKEN
-if (!SECRET_TOKEN) {
-  throw new Error('SECRET_TOKEN environment variable is required')
+// Supabase'den gelen payload için type tanımı
+interface SupabaseSMSPayload {
+  user: {
+    id: string
+    phone: string
+    [key: string]: any
+  }
+  sms: {
+    otp: string
+  }
 }
 
-interface SMSRequestBody {
-  phone: string // full phone number like 905xxxxxxxxx
-  message: string
-}
-
-// Middleware to check authentication
-const authMiddleware: RequestHandler = (req, res, next) => {
-  const authHeader = req.headers.authorization
-
-  if (authHeader !== `Bearer ${SECRET_TOKEN}`) {
-    res.status(401).json({ error: 'Unauthorized' })
+// Middleware: geçerli payload kontrolü
+const validateSMSRequest = (req: Request, res: Response, next: () => void) => {
+  const body = req.body as SupabaseSMSPayload
+  if (!body?.user?.phone || !body?.sms?.otp) {
+    res.status(400).json({ error: 'Missing phone or OTP' })
     return
   }
   next()
 }
 
-// Middleware to validate request body
-const validateSMSRequest: RequestHandler = (req, res, next) => {
-  const { phone, message } = req.body as SMSRequestBody
-
-  if (!phone || !message) {
-    res.status(400).json({ error: 'Missing phone or message' })
-    return
-  }
-  next()
-}
-
-// Regular SMS endpoint
-const sendSMSHandler: RequestHandler = async (req, res) => {
-  const { phone, message } = req.body as SMSRequestBody
+// SMS gönderme handler'ı
+const sendSMSHandler = async (req: Request, res: Response) => {
+  const { user, sms } = req.body as SupabaseSMSPayload
+  const phone = user.phone.replace('+', '') // + işaretini kaldır
+  const otp = sms.otp
 
   try {
-    const smsMessage = NetGSMSender.createMessage(message, phone)
+    const smsMessage = NetGSMSender.createMessage(`Kodunuz: ${otp}`, phone)
     const request = NetGSMSender.createRequest(
       process.env.NETGSM_SMSHEADER || 'Baslik',
       [smsMessage],
@@ -88,44 +71,18 @@ const sendSMSHandler: RequestHandler = async (req, res) => {
   }
 }
 
-// OTP SMS endpoint
-const sendOTPHandler: RequestHandler = async (req, res) => {
-  const { phone, message } = req.body as SMSRequestBody
-
-  try {
-    const response = await otpClient.sendOtpSMS(phone, message)
-
-    if (response.code !== 0) {
-      console.error('OTP SMS Error:', response)
-      res.status(500).json({
-        error: response.error || 'OTP SMS failed',
-        code: response.code,
-      })
-      return
-    }
-
-    res.status(200).json({
-      success: true,
-      jobID: response.jobID,
-      type: 'otp',
-    })
-  } catch (err) {
-    console.error('OTP SMS Error:', err)
-    res.status(500).json({ error: (err as Error).message })
-  }
-}
-
-// Health check endpoint
-router.get('/health', (req, res) => {
+// Sağlık kontrol endpoint'i
+router.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok' })
 })
 
-// Apply middleware to both endpoints
-router.post('/sms/send', authMiddleware, validateSMSRequest, sendSMSHandler)
-router.post('/sms/otp', authMiddleware, validateSMSRequest, sendOTPHandler)
+// Supabase SMS Hook endpoint'i
+router.post('/sms/send', validateSMSRequest, sendSMSHandler)
 
+// Router'ı uygula
 app.use('/', router)
 
+// Sunucu başlat
 const PORT = process.env.PORT || 4400
 app.listen(PORT, () => {
   console.log(`Custom SMS Gateway listening on port ${PORT}`)
